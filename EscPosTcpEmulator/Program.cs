@@ -19,7 +19,18 @@ string outputDirectory = Path.Combine(AppContext.BaseDirectory, "receipts");
 Directory.CreateDirectory(outputDirectory);
 
 var listener = new TcpListener(IPAddress.Any, port);
-listener.Start();
+
+try
+{
+    listener.Start();
+}
+catch (SocketException ex) when (ex.SocketErrorCode == SocketError.AddressAlreadyInUse)
+{
+    Console.WriteLine($"Port {port} is already in use. Stop the other ESC/POS emulator or choose another port.");
+    Console.WriteLine($"Find the process with: netstat -ano | findstr :{port}");
+    Console.WriteLine($"Then stop it with: taskkill /PID <PID> /F");
+    Environment.Exit(1);
+}
 
 Console.WriteLine($"NepalHMS ESC/POS TCP Emulator listening on 0.0.0.0:{port}");
 Console.WriteLine($"Receipt text files will be saved to: {outputDirectory}");
