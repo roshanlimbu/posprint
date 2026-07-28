@@ -184,11 +184,23 @@ cd EscPosTcpEmulator
 dotnet run -- 9100
 ```
 
+Publish it as one self-contained Windows `.exe` with:
+
+```powershell
+dotnet publish EscPosTcpEmulator.csproj -c Release -r win-x64 --self-contained true -p:PublishSingleFile=true -o ./publish
+```
+
+The release output is:
+
+```text
+EscPosTcpEmulator/publish/EscPosTcpEmulator.exe
+```
+
 To also create/update a Windows printer queue automatically, run PowerShell as
 Administrator and start the emulator with:
 
 ```powershell
-dotnet run -- --port 9100 --install-printer
+.\publish\EscPosTcpEmulator.exe --port 9100 --install-printer
 ```
 
 This creates a `Generic / Text Only` queue named `NepalHMS ESC POS Emulator`

@@ -1,6 +1,7 @@
 using System.Diagnostics;
 using System.Net;
 using System.Net.Sockets;
+using System.Runtime.Versioning;
 using System.Security.Principal;
 using System.Text;
 
@@ -200,13 +201,13 @@ internal sealed class EmulatorOptions
 
             if (arg.Equals("--printer-name", StringComparison.OrdinalIgnoreCase) && TryReadNext(args, ref index, out string? nameValue))
             {
-                printerName = nameValue;
+                printerName = nameValue ?? printerName;
                 continue;
             }
 
             if (arg.Equals("--printer-host", StringComparison.OrdinalIgnoreCase) && TryReadNext(args, ref index, out string? hostValue))
             {
-                printerHost = hostValue;
+                printerHost = hostValue ?? printerHost;
             }
         }
 
@@ -314,6 +315,7 @@ if (-not (Get-Printer -Name $printerName -ErrorAction SilentlyContinue)) {
         }
     }
 
+    [SupportedOSPlatform("windows")]
     private static bool IsAdministrator()
     {
         using var identity = WindowsIdentity.GetCurrent();
