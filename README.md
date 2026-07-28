@@ -177,7 +177,7 @@ This JSON payload accurately reproduces the standard NON-VAT Hospital receipt la
 
 ## Local ESC/POS Emulator
 
-For development without a thermal printer, run the bundled TCP emulator:
+For development without a thermal printer, run the bundled TCP emulator preview app:
 
 ```powershell
 cd EscPosTcpEmulator
@@ -213,7 +213,7 @@ Printer name: tcp://127.0.0.1:9100
 Receipt width: 42
 ```
 
-Now test prints and website prints bypass the Windows spooler and send ESC/POS bytes directly to the emulator. The emulator prints readable receipt text in its console and saves each receipt under `EscPosTcpEmulator/bin/.../receipts/`.
+Now test prints and website prints bypass the Windows spooler and send ESC/POS bytes directly to the emulator. The emulator shows each receipt in its preview window and also saves each receipt under `EscPosTcpEmulator/bin/.../receipts/`.
 
 If you specifically want to test through the Windows spooler instead of direct
 TCP, select `NepalHMS ESC POS Emulator` as the POS service printer name.
