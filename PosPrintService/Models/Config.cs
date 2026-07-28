@@ -1,5 +1,7 @@
 using System;
+using System.Collections.Generic;
 using System.IO;
+using System.Security.Cryptography;
 using System.Text.Json;
 using System.Text.Json.Serialization;
 
@@ -32,6 +34,19 @@ namespace PosPrintService.Models
         [JsonPropertyName("LogRequests")]
         public bool LogRequests { get; set; } = true;
 
+        [JsonPropertyName("ApiToken")]
+        public string ApiToken { get; set; } = string.Empty;
+
+        [JsonPropertyName("AllowedOrigins")]
+        public List<string> AllowedOrigins { get; set; } =
+        [
+            "http://127.0.0.1:8000",
+            "http://localhost:8000"
+        ];
+
+        [JsonPropertyName("IdempotencyWindowMinutes")]
+        public int IdempotencyWindowMinutes { get; set; } = 10;
+
         private static string GetConfigPath()
         {
             string baseDir = AppDomain.CurrentDomain.BaseDirectory;
@@ -49,7 +64,17 @@ namespace PosPrintService.Models
                     var options = new JsonSerializerOptions { ReadCommentHandling = JsonCommentHandling.Skip, AllowTrailingCommas = true };
                     var config = JsonSerializer.Deserialize<Config>(json, options);
                     if (config != null)
+                    {
+                        config.AllowedOrigins ??= [];
+
+                        if (string.IsNullOrWhiteSpace(config.ApiToken))
+                        {
+                            config.ApiToken = GenerateApiToken();
+                            config.Save();
+                        }
+
                         return config;
+                    }
                 }
             }
             catch (Exception ex)
@@ -57,9 +82,17 @@ namespace PosPrintService.Models
                 Console.WriteLine($"[Warning] Failed to read config.json ({ex.Message}). Using default POS-76 settings.");
             }
 
-            var defaultConfig = new Config();
+            var defaultConfig = new Config
+            {
+                ApiToken = GenerateApiToken()
+            };
             defaultConfig.Save();
             return defaultConfig;
+        }
+
+        private static string GenerateApiToken()
+        {
+            return Convert.ToHexString(RandomNumberGenerator.GetBytes(32));
         }
 
         public bool Save()

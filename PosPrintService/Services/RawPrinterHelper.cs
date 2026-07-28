@@ -127,17 +127,18 @@ namespace PosPrintService.Services
                 Marshal.Copy(bytes, 0, pBytes, bytes.Length);
 
                 bool success = WritePrinter(hPrinter, pBytes, bytes.Length, out int dwWritten);
-                if (!success || dwWritten != bytes.Length)
+                bool completeWrite = success && dwWritten == bytes.Length;
+                if (!completeWrite)
                 {
                     int err = Marshal.GetLastWin32Error();
-                    errorMessage = $"WritePrinter failed or wrote incomplete buffer. Win32 Error: {err}";
+                    errorMessage = $"WritePrinter wrote {dwWritten} of {bytes.Length} bytes. Win32 Error: {err}";
                 }
 
                 EndPagePrinter(hPrinter);
                 EndDocPrinter(hPrinter);
                 ClosePrinter(hPrinter);
 
-                return success;
+                return completeWrite;
             }
             catch (Exception ex)
             {

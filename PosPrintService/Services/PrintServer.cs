@@ -1,6 +1,9 @@
 using System;
+using System.Collections.Concurrent;
 using System.IO;
+using System.Linq;
 using System.Net;
+using System.Security.Cryptography;
 using System.Text;
 using System.Text.Json;
 using System.Threading;
@@ -15,10 +18,13 @@ namespace PosPrintService.Services
     /// </summary>
     public class PrintServer : IDisposable
     {
+        private const long MaxRequestBytes = 1024 * 1024;
+
         private HttpListener? _listener;
         private CancellationTokenSource? _cts;
         private Config _config;
         private bool _isRunning;
+        private readonly ConcurrentDictionary<string, DateTimeOffset> _acceptedJobs = new(StringComparer.Ordinal);
 
         public event Action<string, bool>? OnLog;
 
@@ -86,18 +92,19 @@ namespace PosPrintService.Services
             var request = context.Request;
             var response = context.Response;
 
-            // 1. Set standard CORS headers for cross-origin browser fetch
-            response.AddHeader("Access-Control-Allow-Origin", "*");
-            response.AddHeader("Access-Control-Allow-Methods", "GET, POST, OPTIONS");
-            response.AddHeader("Access-Control-Allow-Headers", "Content-Type, Authorization, X-Requested-With, Accept");
-
             try
             {
+                if (!ApplyCorsHeaders(request, response))
+                {
+                    response.StatusCode = 403;
+                    await WriteJsonResponse(response, new { success = false, error = "This web application origin is not allowed to use the POS print service." });
+                    return;
+                }
+
                 // Handle preflight OPTIONS request
                 if (request.HttpMethod == "OPTIONS")
                 {
-                    response.StatusCode = 200;
-                    response.Close();
+                    response.StatusCode = 204;
                     return;
                 }
 
@@ -139,11 +146,12 @@ namespace PosPrintService.Services
             {
                 status = "online",
                 service = "NepalHMS POS Print Service",
-                version = "1.0.0",
+                version = "1.2.0",
                 active_printer = _config.PrinterName,
                 port = _config.ListenPort,
                 auto_cut = _config.AutoCut,
                 open_cash_drawer = _config.OpenCashDrawer,
+                authentication_required = true,
                 installed_printers = RawPrinterHelper.GetInstalledPrinters()
             };
 
@@ -153,8 +161,37 @@ namespace PosPrintService.Services
 
         private async Task HandlePrintRequest(HttpListenerRequest request, HttpListenerResponse response)
         {
-            using var reader = new StreamReader(request.InputStream, request.ContentEncoding);
-            string jsonBody = await reader.ReadToEndAsync();
+            if (!IsAuthorized(request))
+            {
+                response.StatusCode = 401;
+                await WriteJsonResponse(response, new { success = false, error = "A valid X-PosPrint-Token header is required." });
+                return;
+            }
+
+            if (request.ContentLength64 > MaxRequestBytes)
+            {
+                response.StatusCode = 413;
+                await WriteJsonResponse(response, new { success = false, error = "The print payload exceeds the 1 MB limit." });
+                return;
+            }
+
+            using var payloadStream = new MemoryStream();
+            byte[] payloadBuffer = new byte[81920];
+            int bytesRead;
+
+            while ((bytesRead = await request.InputStream.ReadAsync(payloadBuffer, 0, payloadBuffer.Length)) > 0)
+            {
+                if (payloadStream.Length + bytesRead > MaxRequestBytes)
+                {
+                    response.StatusCode = 413;
+                    await WriteJsonResponse(response, new { success = false, error = "The print payload exceeds the 1 MB limit." });
+                    return;
+                }
+
+                await payloadStream.WriteAsync(payloadBuffer, 0, bytesRead);
+            }
+
+            string jsonBody = request.ContentEncoding.GetString(payloadStream.ToArray());
 
             if (string.IsNullOrWhiteSpace(jsonBody))
             {
@@ -163,51 +200,128 @@ namespace PosPrintService.Services
                 return;
             }
 
-            Invoice? invoice;
+            var options = new JsonSerializerOptions
+            {
+                ReadCommentHandling = JsonCommentHandling.Skip,
+                PropertyNameCaseInsensitive = true
+            };
+
+            PrintRequestEnvelope? envelope;
             try
             {
-                var options = new JsonSerializerOptions { ReadCommentHandling = JsonCommentHandling.Skip, PropertyNameCaseInsensitive = true };
-                invoice = JsonSerializer.Deserialize<Invoice>(jsonBody, options);
+                envelope = JsonSerializer.Deserialize<PrintRequestEnvelope>(jsonBody, options);
             }
             catch (Exception ex)
             {
                 Log($"JSON Deserialization failed: {ex.Message}", true);
                 response.StatusCode = 400;
-                await WriteJsonResponse(response, new { success = false, error = "Invalid JSON invoice payload." });
+                await WriteJsonResponse(response, new { success = false, error = "Invalid JSON print payload." });
                 return;
             }
 
-            if (invoice == null)
+            if (envelope == null)
             {
                 response.StatusCode = 400;
-                await WriteJsonResponse(response, new { success = false, error = "Could not parse invoice payload." });
+                await WriteJsonResponse(response, new { success = false, error = "Could not parse print payload." });
                 return;
             }
 
-            string invNum = !string.IsNullOrWhiteSpace(invoice.InvoiceNumber) ? invoice.InvoiceNumber : "N/A";
-            Log($"Received print job for Invoice #{invNum} (Total: {invoice.GrandTotal:0.00})...", false);
-
-            // Translate invoice to ESC/POS binary stream
-            byte[] receiptBytes = EscPosBuilder.BuildReceipt(invoice, _config);
-            string docTitle = $"Invoice {invNum}";
-
-            // Transmit binary payload directly to printer hardware queue
-            bool sent = RawPrinterHelper.SendBytesToPrinter(_config.PrinterName, receiptBytes, docTitle, out string errorMsg);
-
-            if (sent)
+            if (string.IsNullOrWhiteSpace(envelope.JobId))
             {
-                Log($"Successfully transmitted {receiptBytes.Length} bytes to printer '{_config.PrinterName}'.", false);
+                response.StatusCode = 422;
+                await WriteJsonResponse(response, new { success = false, error = "JobId is required for duplicate-print protection." });
+                return;
+            }
+
+            byte[] printBytes;
+            string documentTitle;
+            string reference;
+
+            try
+            {
+                if (string.Equals(envelope.DocumentType, "invoice", StringComparison.OrdinalIgnoreCase))
+                {
+                    Invoice? invoice = JsonSerializer.Deserialize<Invoice>(jsonBody, options);
+
+                    if (invoice == null)
+                    {
+                        response.StatusCode = 400;
+                        await WriteJsonResponse(response, new { success = false, error = "Could not parse invoice payload." });
+                        return;
+                    }
+
+                    reference = !string.IsNullOrWhiteSpace(invoice.InvoiceNumber) ? invoice.InvoiceNumber : "N/A";
+                    printBytes = EscPosBuilder.BuildReceipt(invoice, _config);
+                    documentTitle = $"Invoice {reference}";
+                    Log($"Received print job for Invoice #{reference} (Total: {invoice.GrandTotal:0.00})...", false);
+                }
+                else if (string.Equals(envelope.DocumentType, "master_bill", StringComparison.OrdinalIgnoreCase))
+                {
+                    MasterBillReport? report = JsonSerializer.Deserialize<MasterBillReport>(jsonBody, options);
+
+                    if (report == null)
+                    {
+                        response.StatusCode = 400;
+                        await WriteJsonResponse(response, new { success = false, error = "Could not parse master bill payload." });
+                        return;
+                    }
+
+                    reference = report.Period ?? "All dates";
+                    printBytes = EscPosBuilder.BuildMasterBill(report, _config);
+                    documentTitle = "Master Bill Report";
+                    Log($"Received Master Bill print job with {report.Bills.Count} bill(s)...", false);
+                }
+                else
+                {
+                    response.StatusCode = 422;
+                    await WriteJsonResponse(response, new { success = false, error = "DocumentType must be 'invoice' or 'master_bill'." });
+                    return;
+                }
+            }
+            catch (JsonException ex)
+            {
+                Log($"Print payload validation failed: {ex.Message}", true);
+                response.StatusCode = 400;
+                await WriteJsonResponse(response, new { success = false, error = "The print payload contains invalid field values." });
+                return;
+            }
+
+            if (!TryReserveJob(envelope.JobId))
+            {
+                Log($"Ignored duplicate print job '{envelope.JobId}' ({envelope.DocumentType}: {reference}).", false);
                 response.StatusCode = 200;
                 await WriteJsonResponse(response, new
                 {
                     success = true,
-                    message = $"Receipt printed successfully on '{_config.PrinterName}'.",
-                    bytes_sent = receiptBytes.Length,
-                    invoice_number = invNum
+                    duplicate = true,
+                    message = "This print job was already accepted and was not printed again.",
+                    document_type = envelope.DocumentType,
+                    reference,
+                    job_id = envelope.JobId
+                });
+                return;
+            }
+
+            // Transmit binary payload directly to printer hardware queue
+            bool sent = RawPrinterHelper.SendBytesToPrinter(_config.PrinterName, printBytes, documentTitle, out string errorMsg);
+
+            if (sent)
+            {
+                Log($"Successfully transmitted {printBytes.Length} bytes to printer '{_config.PrinterName}'.", false);
+                response.StatusCode = 200;
+                await WriteJsonResponse(response, new
+                {
+                    success = true,
+                    message = $"Document printed successfully on '{_config.PrinterName}'.",
+                    bytes_sent = printBytes.Length,
+                    document_type = envelope.DocumentType,
+                    reference,
+                    job_id = envelope.JobId
                 });
             }
             else
             {
+                _acceptedJobs.TryRemove(envelope.JobId, out _);
                 Log($"Printing failed on '{_config.PrinterName}': {errorMsg}", true);
                 response.StatusCode = 500;
                 await WriteJsonResponse(response, new
@@ -216,6 +330,72 @@ namespace PosPrintService.Services
                     error = errorMsg,
                     printer = _config.PrinterName
                 });
+            }
+        }
+
+        private bool ApplyCorsHeaders(HttpListenerRequest request, HttpListenerResponse response)
+        {
+            string? origin = request.Headers["Origin"];
+
+            if (!string.IsNullOrWhiteSpace(origin))
+            {
+                bool allowed = _config.AllowedOrigins.Any(configuredOrigin =>
+                    string.Equals(
+                        configuredOrigin.TrimEnd('/'),
+                        origin.TrimEnd('/'),
+                        StringComparison.OrdinalIgnoreCase
+                    )
+                );
+
+                if (!allowed)
+                    return false;
+
+                response.AddHeader("Access-Control-Allow-Origin", origin);
+                response.AddHeader("Vary", "Origin");
+            }
+
+            response.AddHeader("Access-Control-Allow-Methods", "GET, POST, OPTIONS");
+            response.AddHeader("Access-Control-Allow-Headers", "Content-Type, Accept, X-PosPrint-Token");
+            response.AddHeader("Access-Control-Max-Age", "600");
+
+            return true;
+        }
+
+        private bool IsAuthorized(HttpListenerRequest request)
+        {
+            string suppliedToken = request.Headers["X-PosPrint-Token"] ?? string.Empty;
+
+            if (string.IsNullOrWhiteSpace(_config.ApiToken) || string.IsNullOrWhiteSpace(suppliedToken))
+                return false;
+
+            byte[] expected = Encoding.UTF8.GetBytes(_config.ApiToken);
+            byte[] supplied = Encoding.UTF8.GetBytes(suppliedToken);
+
+            return expected.Length == supplied.Length &&
+                   CryptographicOperations.FixedTimeEquals(expected, supplied);
+        }
+
+        private bool TryReserveJob(string jobId)
+        {
+            DateTimeOffset now = DateTimeOffset.UtcNow;
+            DateTimeOffset cutoff = now.AddMinutes(-Math.Max(1, _config.IdempotencyWindowMinutes));
+
+            foreach (var acceptedJob in _acceptedJobs)
+            {
+                if (acceptedJob.Value < cutoff)
+                    _acceptedJobs.TryRemove(acceptedJob.Key, out _);
+            }
+
+            while (true)
+            {
+                if (!_acceptedJobs.TryGetValue(jobId, out DateTimeOffset acceptedAt))
+                    return _acceptedJobs.TryAdd(jobId, now);
+
+                if (acceptedAt >= cutoff)
+                    return false;
+
+                if (_acceptedJobs.TryUpdate(jobId, now, acceptedAt))
+                    return true;
             }
         }
 

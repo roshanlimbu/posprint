@@ -220,12 +220,21 @@ namespace PosPrintService.UI
 
         private void OnReloadConfigClicked(object? sender, EventArgs e)
         {
-            _config = Config.Load();
+            int activePort = _config.ListenPort;
+            Config reloadedConfig = Config.Load();
+            bool restartRequired = reloadedConfig.ListenPort != activePort;
+            reloadedConfig.ListenPort = activePort;
+            _config = reloadedConfig;
             _server.UpdateConfig(_config);
             _lblPrinter.Text = $"Target: {_config.PrinterName}";
-            _notifyIcon.Text = $"NepalHMS POS Print Service (Port {_config.ListenPort})";
-            _logViewer.AppendLog("Configuration reloaded from config.json disk file.", false);
-            _notifyIcon.ShowBalloonTip(2000, "Configuration Reloaded", $"Updated printer target: {_config.PrinterName}\nListening Port: {_config.ListenPort}", ToolTipIcon.Info);
+            _notifyIcon.Text = $"NepalHMS POS Print Service (Port {activePort})";
+
+            string reloadMessage = restartRequired
+                ? $"Configuration reloaded. Restart the service to apply the changed listening port. Active port: {activePort}."
+                : "Configuration reloaded from config.json disk file.";
+
+            _logViewer.AppendLog(reloadMessage, false);
+            _notifyIcon.ShowBalloonTip(3000, "Configuration Reloaded", reloadMessage, ToolTipIcon.Info);
         }
 
         private void ShowLogViewer()

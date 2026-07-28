@@ -5,5 +5,11 @@
   "OpenCashDrawer": false,
   "CharacterEncoding": 437,
   "ReceiptWidth": 42,
-  "LogRequests": true
+  "LogRequests": true,
+  "ApiToken": "",
+  "AllowedOrigins": [
+    "http://127.0.0.1:8000",
+    "http://localhost:8000"
+  ],
+  "IdempotencyWindowMinutes": 10
 }

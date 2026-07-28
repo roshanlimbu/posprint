@@ -8,7 +8,7 @@ namespace PosPrintService.Models
     /// Comprehensive structured invoice model tailored for Nepali hospital billing receipts
     /// (e.g. Family Care Hospital, NepalHMS) with full support for BS dates, VAT exemption, and 4-column items.
     /// </summary>
-    public class Invoice
+    public class Invoice : PrintRequestEnvelope
     {
         // --- Header Information ---
         [JsonPropertyName("HospitalName")]
@@ -60,12 +60,24 @@ namespace PosPrintService.Models
         [JsonPropertyName("PaymentMethod")]
         public string? PaymentMethod { get; set; } // Fallback/alias for Payment
 
+        [JsonPropertyName("PaymentTransactionId")]
+        public string? PaymentTransactionId { get; set; }
+
         // --- Patient & Demographics ---
         [JsonPropertyName("PatientName")]
         public string? PatientName { get; set; }
 
         [JsonPropertyName("HospitalNo")]
         public string? HospitalNo { get; set; } // e.g. "HN-2026-000001"
+
+        [JsonPropertyName("BuyerPan")]
+        public string? BuyerPan { get; set; }
+
+        [JsonPropertyName("BuyerAddress")]
+        public string? BuyerAddress { get; set; }
+
+        [JsonPropertyName("BuyerMobile")]
+        public string? BuyerMobile { get; set; }
 
         [JsonPropertyName("AgeSex")]
         public string? AgeSex { get; set; } // e.g. "23 / unknown"
@@ -87,6 +99,9 @@ namespace PosPrintService.Models
         [JsonPropertyName("VatExempt")]
         public decimal? VatExempt { get; set; }
 
+        [JsonPropertyName("Taxable")]
+        public decimal? Taxable { get; set; }
+
         [JsonPropertyName("VatAmount")]
         public decimal? VatAmount { get; set; }
 
@@ -105,11 +120,17 @@ namespace PosPrintService.Models
         [JsonPropertyName("PaidByPatient")]
         public decimal? PaidByPatient { get; set; }
 
+        [JsonPropertyName("SchemePaid")]
+        public decimal? SchemePaid { get; set; }
+
         [JsonPropertyName("Paid")]
         public decimal? Paid { get; set; }
 
         [JsonPropertyName("Change")]
         public decimal? Change { get; set; }
+
+        [JsonPropertyName("Balance")]
+        public decimal? Balance { get; set; }
 
         // --- Footer & Words ---
         [JsonPropertyName("InWords")]
@@ -121,9 +142,6 @@ namespace PosPrintService.Models
         [JsonPropertyName("FooterMessage")]
         public string? FooterMessage { get; set; } // Fallback/alias for FooterNotes
 
-        // Hardware overrides
-        [JsonPropertyName("OpenCashDrawer")]
-        public bool? OpenCashDrawer { get; set; }
     }
 
     /// <summary>
@@ -148,5 +166,8 @@ namespace PosPrintService.Models
 
         [JsonPropertyName("Total")]
         public decimal Total { get; set; } // Fallback/alias for Amt
+
+        [JsonPropertyName("HsCode")]
+        public string? HsCode { get; set; }
     }
 }
