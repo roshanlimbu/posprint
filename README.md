@@ -10,6 +10,7 @@ A standalone, zero-dialog Windows printing service designed for **NepalHMS** and
 - **Interactive System Tray UI:** Runs seamlessly near the Windows clock. Cashiers can:
   - Check operational status and listening port at a glance.
   - **Switch Target Printers On-the-Fly** directly from a right-click menu (auto-detects **POS-76** and installed print queues).
+  - Configure printer name, port, receipt width, website origins, token, cutter, drawer, and logging from a Settings window.
   - **Perform Hardware Test Prints (Hospital Sample)** instantly to verify communication, layout alignment, and auto-cutter functionality.
   - View real-time timestamped diagnostic activity logs in a clean floating window.
 - **Single-File Deployment:** Publishes as a self-contained `.exe` (~20–30 MB) with **no manual .NET Runtime installations required on cashier terminals**.
@@ -43,14 +44,15 @@ Open Terminal / PowerShell in the repository directory and run:
    ```
 
 3. **Deploy to Cashier Terminals:**
-   - Copy `PosPrintService.exe` from `./publish` to the cashier desktop terminal (or place it in the Windows Startup folder `shell:startup`).
-   - Double-click to run! Look for the green printer badge icon near the Windows system clock.
+   - Copy `PosPrintService.exe` and `config.json` from `./publish` to a writable folder such as `C:\NepalHMS\PosPrintService`.
+   - Double-click to run. Look for the green printer badge icon near the Windows system clock.
+   - Right-click the tray icon and open **Settings...** to select the printer, receipt width, website origin, and API token.
 
 ---
 
 ## ⚙️ Configuration (`config.json`)
 
-The service generates and reads from a simple `config.json` in its root directory:
+The service generates and reads from a simple `config.json` in its root directory. Normal setup should be done from the tray icon's **Settings...** window; direct JSON editing is only needed for scripted rollout.
 
 ```json
 {

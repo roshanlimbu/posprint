@@ -51,7 +51,9 @@ namespace PosPrintService.UI
             _menuPrinters.DropDownOpening += (s, e) => PopulatePrintersSubmenu();
             _menu.Items.Add(_menuPrinters);
 
+            var itemSettings = new ToolStripMenuItem("Settings...", null, OnSettingsClicked);
             var itemTestPrint = new ToolStripMenuItem("Perform Test Print (Hospital Sample)", null, OnTestPrintClicked);
+            _menu.Items.Add(itemSettings);
             _menu.Items.Add(itemTestPrint);
             _menu.Items.Add(new ToolStripSeparator());
 
@@ -216,6 +218,43 @@ namespace PosPrintService.UI
             {
                 MessageBox.Show($"Failed to open Notepad: {ex.Message}", "Error", MessageBoxButtons.OK, MessageBoxIcon.Warning);
             }
+        }
+
+        private void OnSettingsClicked(object? sender, EventArgs e)
+        {
+            int activePort = _config.ListenPort;
+
+            using var settings = new SettingsForm(_config);
+            if (settings.ShowDialog() != DialogResult.OK)
+            {
+                return;
+            }
+
+            settings.ApplyTo(_config);
+            bool restartRequired = _config.ListenPort != activePort;
+            int requestedPort = _config.ListenPort;
+
+            if (!_config.Save())
+            {
+                MessageBox.Show("Could not save config.json. Move the service folder to a writable location such as C:\\NepalHMS\\PosPrintService.", "Save Failed", MessageBoxButtons.OK, MessageBoxIcon.Error);
+                return;
+            }
+
+            if (restartRequired)
+            {
+                _config.ListenPort = activePort;
+            }
+
+            _server.UpdateConfig(_config);
+            _lblPrinter.Text = $"Target: {_config.PrinterName}";
+            _notifyIcon.Text = $"NepalHMS POS Print Service (Port {activePort})";
+
+            string message = restartRequired
+                ? $"Settings saved. Restart the service to switch from port {activePort} to {requestedPort}."
+                : "Settings saved.";
+
+            _logViewer.AppendLog(message, false);
+            _notifyIcon.ShowBalloonTip(3000, "Settings Saved", message, ToolTipIcon.Info);
         }
 
         private void OnReloadConfigClicked(object? sender, EventArgs e)

@@ -69,7 +69,7 @@ namespace PosPrintService.Models
 
                         if (string.IsNullOrWhiteSpace(config.ApiToken))
                         {
-                            config.ApiToken = GenerateApiToken();
+                            config.ApiToken = CreateApiToken();
                             config.Save();
                         }
 
@@ -84,13 +84,13 @@ namespace PosPrintService.Models
 
             var defaultConfig = new Config
             {
-                ApiToken = GenerateApiToken()
+                ApiToken = CreateApiToken()
             };
             defaultConfig.Save();
             return defaultConfig;
         }
 
-        private static string GenerateApiToken()
+        public static string CreateApiToken()
         {
             return Convert.ToHexString(RandomNumberGenerator.GetBytes(32));
         }
