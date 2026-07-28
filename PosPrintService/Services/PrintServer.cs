@@ -96,6 +96,7 @@ namespace PosPrintService.Services
             {
                 if (!ApplyCorsHeaders(request, response))
                 {
+                    Log($"Blocked request from unconfigured origin: {request.Headers["Origin"] ?? "N/A"}", true);
                     response.StatusCode = 403;
                     await WriteJsonResponse(response, new { success = false, error = "This web application origin is not allowed to use the POS print service." });
                     return;
@@ -142,6 +143,11 @@ namespace PosPrintService.Services
 
         private async Task HandleStatusRequest(HttpListenerResponse response)
         {
+            if (_config.LogRequests)
+            {
+                Log("Status probe received.", false);
+            }
+
             var statusObj = new
             {
                 status = "online",
@@ -348,7 +354,9 @@ namespace PosPrintService.Services
                 );
 
                 if (!allowed)
+                {
                     return false;
+                }
 
                 response.AddHeader("Access-Control-Allow-Origin", origin);
                 response.AddHeader("Vary", "Origin");
@@ -356,6 +364,7 @@ namespace PosPrintService.Services
 
             response.AddHeader("Access-Control-Allow-Methods", "GET, POST, OPTIONS");
             response.AddHeader("Access-Control-Allow-Headers", "Content-Type, Accept, X-PosPrint-Token");
+            response.AddHeader("Access-Control-Allow-Private-Network", "true");
             response.AddHeader("Access-Control-Max-Age", "600");
 
             return true;

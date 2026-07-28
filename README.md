@@ -175,6 +175,37 @@ This JSON payload accurately reproduces the standard NON-VAT Hospital receipt la
 - `GET http://127.0.0.1:9111/status` — Returns server operational status, port, active target printer, and a list of all detected Windows printer queues.
 - `POST http://127.0.0.1:9111/print/` — Requires `X-PosPrint-Token`, a supported `DocumentType` (`invoice` or `master_bill`), and a unique `JobId`; then transmits raw ESC/POS bytes directly to the configured printer queue.
 
+## Local ESC/POS Emulator
+
+For development without a thermal printer, run the bundled TCP emulator:
+
+```powershell
+cd EscPosTcpEmulator
+dotnet run -- 9100
+```
+
+To also create/update a Windows printer queue automatically, run PowerShell as
+Administrator and start the emulator with:
+
+```powershell
+dotnet run -- --port 9100 --install-printer
+```
+
+This creates a `Generic / Text Only` queue named `NepalHMS ESC POS Emulator`
+pointing to `127.0.0.1:9100`.
+
+Then open the POS service tray **Settings...** window and set:
+
+```text
+Printer name: tcp://127.0.0.1:9100
+Receipt width: 42
+```
+
+Now test prints and website prints bypass the Windows spooler and send ESC/POS bytes directly to the emulator. The emulator prints readable receipt text in its console and saves each receipt under `EscPosTcpEmulator/bin/.../receipts/`.
+
+If you specifically want to test through the Windows spooler instead of direct
+TCP, select `NepalHMS ESC POS Emulator` as the POS service printer name.
+
 ## NepalHms Configuration
 
 ```env

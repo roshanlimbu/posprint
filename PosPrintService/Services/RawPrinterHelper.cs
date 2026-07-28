@@ -1,6 +1,8 @@
 using System;
 using System.Collections.Generic;
 using System.Drawing.Printing;
+using System.IO;
+using System.Net.Sockets;
 using System.Runtime.InteropServices;
 
 namespace PosPrintService.Services
@@ -77,6 +79,16 @@ namespace PosPrintService.Services
         public static bool SendBytesToPrinter(string printerName, byte[] bytes, string documentTitle, out string errorMessage)
         {
             errorMessage = string.Empty;
+
+            if (TrySendToTcpTarget(printerName, bytes, out errorMessage))
+            {
+                return true;
+            }
+
+            if (errorMessage.Length > 0)
+            {
+                return false;
+            }
 
             if (!OperatingSystem.IsWindows())
             {
@@ -155,6 +167,46 @@ namespace PosPrintService.Services
                 {
                     Marshal.FreeCoTaskMem(pBytes);
                 }
+            }
+        }
+
+        private static bool TrySendToTcpTarget(string printerName, byte[] bytes, out string errorMessage)
+        {
+            errorMessage = string.Empty;
+            string target = printerName.Trim();
+
+            if (!target.StartsWith("tcp://", StringComparison.OrdinalIgnoreCase))
+            {
+                return false;
+            }
+
+            if (!Uri.TryCreate(target, UriKind.Absolute, out Uri? uri) ||
+                string.IsNullOrWhiteSpace(uri.Host) ||
+                uri.Port <= 0)
+            {
+                errorMessage = $"Invalid TCP printer target '{printerName}'. Use tcp://host:port, for example tcp://127.0.0.1:9100.";
+                return false;
+            }
+
+            try
+            {
+                using var client = new TcpClient();
+                if (!client.ConnectAsync(uri.Host, uri.Port).Wait(TimeSpan.FromSeconds(3)))
+                {
+                    errorMessage = $"Timed out connecting to TCP printer target '{printerName}'.";
+                    return false;
+                }
+
+                using NetworkStream stream = client.GetStream();
+                stream.Write(bytes, 0, bytes.Length);
+                stream.Flush();
+
+                return true;
+            }
+            catch (Exception ex) when (ex is SocketException || ex is IOException || ex is ObjectDisposedException)
+            {
+                errorMessage = $"Could not transmit to TCP printer target '{printerName}': {ex.Message}";
+                return false;
             }
         }
     }
