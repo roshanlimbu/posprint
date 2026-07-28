@@ -1,0 +1,9 @@
+{
+  "PrinterName": "POS-76",
+  "ListenPort": 9111,
+  "AutoCut": true,
+  "OpenCashDrawer": false,
+  "CharacterEncoding": 437,
+  "ReceiptWidth": 42,
+  "LogRequests": true
+}

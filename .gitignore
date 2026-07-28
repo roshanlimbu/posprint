@@ -1,0 +1,18 @@
+# .NET Core / WinForms build artifacts
+bin/
+obj/
+*.user
+*.suo
+*.userosscache
+*.sln.docstates
+
+# IDE logs and system files
+.vs/
+.vscode/
+.idea/
+*.log
+.DS_Store
+Thumbs.db
+
+# User configurations generated at runtime (optional, omit if committing defaults)
+# config.json
